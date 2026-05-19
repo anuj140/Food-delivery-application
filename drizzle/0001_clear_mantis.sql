@@ -1,0 +1,1 @@
+ALTER TABLE "restaurants" ALTER COLUMN "cuisine_type" SET DEFAULT '{}';
