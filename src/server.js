@@ -15,6 +15,10 @@ import paymentRoutes from "./routes/payments.js";
 import restaurantOrderRoutes from "./routes/restaurantOrders.js";
 import partnerRoutes from "./routes/partnerRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import reviewRoutes from "./routes/reviews.js";
+import loyaltyRoutes from "./routes/loyalty.js";
+import offerRoutes from "./routes/offers.js";
+import restaurantDashboardRoutes from "./routes/restaurantDashboard.js";
 
 const app = express();
 
@@ -34,6 +38,10 @@ app.use("/api/partner", partnerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/restaurant/orders", restaurantOrderRoutes);
+app.use("/api/restaurant", restaurantDashboardRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/loyalty", loyaltyRoutes);
+app.use("/api/offers", offerRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({

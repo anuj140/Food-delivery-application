@@ -2,8 +2,9 @@ import { db } from "../db.js";
 import { coupons, carts, cartItems, menuItems } from "../schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { validateCouponSchema, validateData } from "../utils/validators.js";
+import { calculateDiscount } from "../utils/discount.js";
 
-async function getCartSubtotal(userId) {
+export async function getCartSubtotal(userId) {
   const [cart] = await db.select().from(carts).where(eq(carts.userId, userId)).limit(1);
   if (!cart) {
     return 0;
@@ -16,20 +17,6 @@ async function getCartSubtotal(userId) {
     .where(eq(cartItems.cartId, cart.id));
 
   return rows.reduce((sum, row) => sum + Number(row.item.priceAtAdd) * Number(row.item.quantity), 0);
-}
-
-function calculateDiscount(coupon, subtotal) {
-  if (!coupon) {
-    return 0;
-  }
-
-  if (coupon.discountType === "percentage") {
-    const discountValue = (subtotal * Number(coupon.discountValue)) / 100;
-    const cap = Number(coupon.maxDiscount);
-    return Math.min(discountValue, cap);
-  }
-
-  return Math.min(Number(coupon.discountValue), subtotal);
 }
 
 export async function validateCoupon(req, res) {

@@ -89,8 +89,8 @@ export const otpVerifySchema = z.object({
 });
 
 export const ratingSchema = z.object({
-  foodRating: z.number().int().min(1).max(5),
-  deliveryRating: z.number().int().min(1).max(5),
+  foodRating: z.coerce.number().int().min(1).max(5),
+  deliveryRating: z.coerce.number().int().min(1).max(5),
   reviewText: z.string().optional(),
 });
 
@@ -145,6 +145,56 @@ export const updateMenuItemAvailabilitySchema = z.object({
 // Bulk upload schema
 export const bulkMenuUploadSchema = z.object({
   items: z.array(createMenuItemSchema).min(1, "At least one item is required"),
+});
+
+// ---------------------------------------------------------------------------
+// MVP 4 validators
+// ---------------------------------------------------------------------------
+export const reviewReplySchema = z.object({
+  reply: z.string().min(1, "Reply text is required").max(1000),
+});
+
+export const reviewFlagSchema = z.object({
+  reason: z.string().min(1, "Flag reason is required").max(500),
+});
+
+const timeSlotSchema = z.object({
+  start: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM"),
+  end: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM"),
+});
+
+export const createRestaurantCouponSchema = z.object({
+  code: z.string().min(3, "Coupon code is required").max(50),
+  discountType: z.enum(["percentage", "fixed"]),
+  discountValue: z.coerce.number().positive("Discount value must be positive"),
+  minOrderValue: z.coerce.number().min(0).optional().default(0),
+  maxDiscount: z.coerce.number().min(0).optional().default(0),
+  validFrom: z.string().optional(),
+  validTo: z.string(),
+  timeSlots: z.array(timeSlotSchema).optional().default([]),
+  usageLimit: z.coerce.number().int().min(0).optional().default(0),
+});
+
+export const createComboSchema = z.object({
+  name: z.string().min(1, "Combo name is required").max(255),
+  comboPrice: z.coerce.number().positive("Combo price must be positive"),
+  items: z
+    .array(
+      z.object({
+        menuItemId: z.string().uuid("Invalid menu item ID"),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(2, "A combo needs at least 2 items"),
+});
+
+export const redeemLoyaltySchema = z.object({
+  points: z.coerce.number().int().positive("Points to redeem must be positive"),
+});
+
+export const resolveDisputeSchema = z.object({
+  status: z.enum(["resolved_customer_wins", "resolved_partner_wins"]),
+  adminNotes: z.string().max(2000).optional(),
 });
 
 // Helper function to validate

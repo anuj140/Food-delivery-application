@@ -450,14 +450,154 @@ export const ratings = pgTable(
     orderId: uuid("order_id")
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").references(() => users.id, { onDelete: "cascade" }),
+    restaurantId: uuid("restaurant_id").references(() => restaurants.id, { onDelete: "cascade" }),
     foodRating: decimal("food_rating", { precision: 1, scale: 0 }).notNull(),
     deliveryRating: decimal("delivery_rating", { precision: 1, scale: 0 }).notNull(),
     reviewText: text("review_text"),
+    photos: text("photos").array().notNull().default([]),
+    restaurantReply: text("restaurant_reply"),
+    repliedAt: timestamp("replied_at"),
+    isFlagged: boolean("is_flagged").notNull().default(false),
+    flagReason: text("flag_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
     orderIdIdx: index("ratings_order_id_idx").on(table.orderId),
+    restaurantIdIdx: index("ratings_restaurant_id_idx").on(table.restaurantId),
+    customerIdIdx: index("ratings_customer_id_idx").on(table.customerId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// MVP 4 enums & tables
+// ---------------------------------------------------------------------------
+export const complianceTypeEnum = pgEnum("compliance_type", ["selfie", "thermal_bag", "helmet"]);
+export const disputeRaisedByEnum = pgEnum("dispute_raised_by", ["customer", "partner"]);
+export const disputeStatusEnum = pgEnum("dispute_status", [
+  "open",
+  "resolved_customer_wins",
+  "resolved_partner_wins",
+]);
+
+export const restaurantCoupons = pgTable(
+  "restaurant_coupons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    restaurantId: uuid("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    code: varchar("code", { length: 50 }).notNull().unique(),
+    discountType: couponDiscountTypeEnum("discount_type").notNull(),
+    discountValue: decimal("discount_value", { precision: 10, scale: 2 }).notNull(),
+    minOrderValue: decimal("min_order_value", { precision: 10, scale: 2 }).notNull().default("0"),
+    maxDiscount: decimal("max_discount", { precision: 10, scale: 2 }).notNull().default("0"),
+    validFrom: timestamp("valid_from").notNull().defaultNow(),
+    validTo: timestamp("valid_to").notNull(),
+    timeSlots: jsonb("time_slots").notNull().default([]),
+    usageLimit: decimal("usage_limit", { precision: 10, scale: 0 }).notNull().default("0"),
+    usedCount: decimal("used_count", { precision: 10, scale: 0 }).notNull().default("0"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    codeIdx: uniqueIndex("restaurant_coupons_code_idx").on(table.code),
+    restaurantIdIdx: index("restaurant_coupons_restaurant_id_idx").on(table.restaurantId),
+  }),
+);
+
+export const combos = pgTable(
+  "combos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    restaurantId: uuid("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    comboPrice: decimal("combo_price", { precision: 10, scale: 2 }).notNull(),
+    items: jsonb("items").notNull().default([]),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    restaurantIdIdx: index("combos_restaurant_id_idx").on(table.restaurantId),
+  }),
+);
+
+export const loyaltyPoints = pgTable(
+  "loyalty_points",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    balance: decimal("balance", { precision: 10, scale: 0 }).notNull().default("0"),
+    totalEarned: decimal("total_earned", { precision: 10, scale: 0 }).notNull().default("0"),
+    totalRedeemed: decimal("total_redeemed", { precision: 10, scale: 0 }).notNull().default("0"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    customerIdIdx: uniqueIndex("loyalty_points_customer_id_idx").on(table.customerId),
+  }),
+);
+
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+    points: decimal("points", { precision: 10, scale: 0 }).notNull(),
+    reason: varchar("reason", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    customerIdIdx: index("loyalty_transactions_customer_id_idx").on(table.customerId),
+  }),
+);
+
+export const partnerComplianceLogs = pgTable(
+  "partner_compliance_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    partnerId: uuid("partner_id")
+      .notNull()
+      .references(() => deliveryPartners.id, { onDelete: "cascade" }),
+    type: complianceTypeEnum("type").notNull(),
+    photoUrl: text("photo_url").notNull(),
+    isVerified: boolean("is_verified").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    partnerIdIdx: index("partner_compliance_logs_partner_id_idx").on(table.partnerId),
+    typeIdx: index("partner_compliance_logs_type_idx").on(table.type),
+  }),
+);
+
+export const disputes = pgTable(
+  "disputes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    raisedBy: disputeRaisedByEnum("raised_by").notNull(),
+    reason: text("reason").notNull(),
+    status: disputeStatusEnum("status").notNull().default("open"),
+    adminNotes: text("admin_notes"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    orderIdIdx: index("disputes_order_id_idx").on(table.orderId),
+    statusIdx: index("disputes_status_idx").on(table.status),
   }),
 );
 
@@ -502,6 +642,60 @@ export const tipsRelations = relations(tips, ({ one }) => ({
 export const ratingsRelations = relations(ratings, ({ one }) => ({
   order: one(orders, {
     fields: [ratings.orderId],
+    references: [orders.id],
+  }),
+  customer: one(users, {
+    fields: [ratings.customerId],
+    references: [users.id],
+  }),
+  restaurant: one(restaurants, {
+    fields: [ratings.restaurantId],
+    references: [restaurants.id],
+  }),
+}));
+
+export const restaurantCouponsRelations = relations(restaurantCoupons, ({ one }) => ({
+  restaurant: one(restaurants, {
+    fields: [restaurantCoupons.restaurantId],
+    references: [restaurants.id],
+  }),
+}));
+
+export const combosRelations = relations(combos, ({ one }) => ({
+  restaurant: one(restaurants, {
+    fields: [combos.restaurantId],
+    references: [restaurants.id],
+  }),
+}));
+
+export const loyaltyPointsRelations = relations(loyaltyPoints, ({ one }) => ({
+  customer: one(users, {
+    fields: [loyaltyPoints.customerId],
+    references: [users.id],
+  }),
+}));
+
+export const loyaltyTransactionsRelations = relations(loyaltyTransactions, ({ one }) => ({
+  customer: one(users, {
+    fields: [loyaltyTransactions.customerId],
+    references: [users.id],
+  }),
+  order: one(orders, {
+    fields: [loyaltyTransactions.orderId],
+    references: [orders.id],
+  }),
+}));
+
+export const partnerComplianceLogsRelations = relations(partnerComplianceLogs, ({ one }) => ({
+  partner: one(deliveryPartners, {
+    fields: [partnerComplianceLogs.partnerId],
+    references: [deliveryPartners.id],
+  }),
+}));
+
+export const disputesRelations = relations(disputes, ({ one }) => ({
+  order: one(orders, {
+    fields: [disputes.orderId],
     references: [orders.id],
   }),
 }));

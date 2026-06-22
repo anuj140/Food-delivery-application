@@ -22,10 +22,22 @@ import {
   ratingSchema,
   tipSchema,
 } from "../utils/validators.js";
+import { uploadImages } from "../utils/cloudinary.js";
 
 const DELIVERY_FEE = 30.0;
 const PACKAGING_FEE = 20.0;
 const TAX_RATE = 0.05;
+
+// Recomputes a restaurant's avgRating as the mean of all its food ratings.
+async function recomputeRestaurantRating(restaurantId) {
+  if (!restaurantId) return;
+  const [row] = await db
+    .select({ avg: sql`AVG(${ratings.foodRating})` })
+    .from(ratings)
+    .where(eq(ratings.restaurantId, restaurantId));
+  const avg = row?.avg ? Number(row.avg).toFixed(1) : "0";
+  await db.update(restaurants).set({ avgRating: avg, updatedAt: new Date() }).where(eq(restaurants.id, restaurantId));
+}
 
 function calculateDiscount(coupon, subtotal) {
   if (!coupon) {
@@ -420,12 +432,23 @@ export async function rateOrder(req, res) {
       return res.status(400).json({ success: false, message: "Order has already been rated" });
     }
 
+    // Up to 3 review photos uploaded server-side to Cloudinary.
+    let photoUrls = [];
+    if (Array.isArray(req.files) && req.files.length > 0) {
+      photoUrls = await uploadImages(req.files.slice(0, 3), "reviews");
+    }
+
     await db.insert(ratings).values({
       orderId: order.id,
+      customerId: order.customerId,
+      restaurantId: order.restaurantId,
       foodRating,
       deliveryRating,
       reviewText: reviewText || null,
+      photos: photoUrls,
     });
+
+    await recomputeRestaurantRating(order.restaurantId);
 
     return res.status(200).json({ success: true, message: "Thank you for rating the order" });
   } catch (error) {

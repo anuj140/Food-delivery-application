@@ -6,8 +6,9 @@ import {
   deliveryAssignments,
   deliveryPartners,
   locationHistory,
+  partnerComplianceLogs,
 } from "../schema.js";
-import { eq, and, not, sql } from "drizzle-orm";
+import { eq, and, not, sql, gte } from "drizzle-orm";
 import {
   partnerProfileSchema,
   partnerLocationSchema,
@@ -15,6 +16,29 @@ import {
   otpVerifySchema,
   validateData,
 } from "../utils/validators.js";
+import { uploadImage } from "../utils/cloudinary.js";
+import { earnPoints } from "./loyalty.js";
+
+// Returns true if the partner has a verified selfie compliance log dated today.
+async function hasVerifiedSelfieToday(partnerId) {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const [log] = await db
+    .select()
+    .from(partnerComplianceLogs)
+    .where(
+      and(
+        eq(partnerComplianceLogs.partnerId, partnerId),
+        eq(partnerComplianceLogs.type, "selfie"),
+        eq(partnerComplianceLogs.isVerified, true),
+        gte(partnerComplianceLogs.createdAt, startOfDay),
+      ),
+    )
+    .limit(1);
+  return !!log;
+}
+
+export { hasVerifiedSelfieToday };
 
 function calculateDistanceKm(lat1, lng1, lat2, lng2) {
   const toRad = (value) => (value * Math.PI) / 180;
@@ -51,6 +75,18 @@ export async function updatePartnerProfile(req, res) {
     }
 
     const { vehicleType, isOnline, licenseUrl, registrationUrl } = validation.data;
+
+    // Compliance gate (Story 11): partner must pass a selfie check before going online.
+    if (isOnline === true && !partner.isOnline) {
+      const verified = await hasVerifiedSelfieToday(partner.id);
+      if (!verified) {
+        return res.status(403).json({
+          success: false,
+          message: "Selfie verification required before going online. Complete /api/partner/selfie-verify first.",
+        });
+      }
+    }
+
     const updatedDocuments = {
       ...(partner.documents || {}),
       ...(licenseUrl ? { licenseUrl } : {}),
@@ -321,11 +357,20 @@ export async function updateOrderStatus(req, res) {
     await db.update(deliveryAssignments).set(updatePayload).where(eq(deliveryAssignments.id, assignment.id));
 
     if (nextStatus === "delivered") {
-      await db.update(orders).set({ status: "completed", updatedAt: new Date() }).where(eq(orders.id, assignment.orderId));
+      const [completedOrder] = await db
+        .update(orders)
+        .set({ status: "completed", updatedAt: new Date() })
+        .where(eq(orders.id, assignment.orderId))
+        .returning();
       await db
         .update(deliveryPartners)
         .set({ totalDeliveries: sql`${deliveryPartners.totalDeliveries} + 1`, updatedAt: new Date() })
         .where(eq(deliveryPartners.id, partner.id));
+
+      // Award loyalty points for the completed order (Story 50).
+      if (completedOrder) {
+        await earnPoints(completedOrder.customerId, completedOrder.id, completedOrder.totalAmount);
+      }
     }
 
     return res.status(200).json({ success: true, message: `Assignment status updated to ${nextStatus}` });
@@ -339,16 +384,18 @@ export async function uploadDeliveryProof(req, res) {
   try {
     const userId = req.user.id;
     const { orderId } = req.params;
-    const proofPhotoUrl = req.body.proofPhotoUrl;
 
-    if (!proofPhotoUrl) {
-      return res.status(400).json({ success: false, message: "Proof photo URL is required" });
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "Proof photo file is required" });
     }
 
     const [partner] = await db.select().from(deliveryPartners).where(eq(deliveryPartners.userId, userId)).limit(1);
     if (!partner) {
       return res.status(404).json({ success: false, message: "Delivery partner profile not found" });
     }
+
+    const uploaded = await uploadImage(req.file.buffer, "delivery-proofs");
+    const proofPhotoUrl = uploaded.secure_url;
 
     const [assignment] = await db
       .select()

@@ -28,6 +28,12 @@ export async function uploadImage(fileBuffer, folder = "food-delivery") {
   });
 }
 
+// Uploads an array of multer files (with .buffer) and returns their secure URLs.
+export async function uploadImages(files = [], folder = "food-delivery") {
+  const results = await Promise.all(files.map((file) => uploadImage(file.buffer, folder)));
+  return results.map((r) => r.secure_url);
+}
+
 export async function deleteImage(publicId) {
   try {
     await cloudinary.uploader.destroy(publicId);
